@@ -258,84 +258,108 @@ public class ${className} {
   }
 };
 
-// Free Public Cloud Code Execution Engine (Piston API)
-const executeInPistonAPI = async (code, language, inputStr, expectedOutputStr) => {
+// Wandbox - Free public cloud compiler API (supports C++/Python/Java/JS without auth)
+const executeInWandbox = async (code, language, inputStr, expectedOutputStr) => {
   const startTime = Date.now();
-  const PISTON_LANG_MAP = {
-    javascript: 'javascript',
-    js: 'javascript',
-    python: 'python',
-    py: 'python',
-    cpp: 'c++',
-    'c++': 'c++',
-    java: 'java',
-    c: 'c',
-    go: 'go',
-    csharp: 'csharp',
-    php: 'php'
+
+  // Wandbox compiler identifiers
+  const WANDBOX_COMPILER_MAP = {
+    cpp: 'gcc-head',
+    'c++': 'gcc-head',
+    c: 'gcc-head',
+    python: 'cpython-3.12.7',
+    py: 'cpython-3.12.7',
+    javascript: 'nodejs-20.17.0',
+    js: 'nodejs-20.17.0',
+    java: 'openjdk-jdk-21+35',
   };
 
-  const pistonLang = PISTON_LANG_MAP[language.toLowerCase()];
-  
-  if (!pistonLang) {
-    return await executeInNativeCompiler(code, language, inputStr, expectedOutputStr);
+  const compiler = WANDBOX_COMPILER_MAP[(language || 'javascript').toLowerCase()];
+
+  if (!compiler) {
+    return {
+      status: 'RuntimeError',
+      passed: false,
+      actualOutput: `Language '${language}' is not supported on this platform. Please use JavaScript, Python, C++, or Java.`,
+      runtimeMs: Date.now() - startTime,
+      memoryKb: 0,
+    };
   }
 
   try {
-    const response = await axios.post(
-      'https://emkc.org/api/v2/piston/execute',
-      {
-        language: pistonLang,
-        version: '*',
-        files: [{ content: code }],
-        stdin: inputStr || '',
-      },
-      { timeout: 8000 }
-    );
-
-    const runResult = response.data.run || {};
-    let actualOutput = (runResult.output || '').trim();
-    let runtimeMs = Date.now() - startTime;
-    let memoryKb = 15000;
-    
-    // Check for compilation or runtime errors from Piston
-    let statusStr = 'Accepted';
-    if (runResult.code !== 0 && runResult.signal) {
-      statusStr = 'RuntimeError';
-      actualOutput = `Runtime Error: Process killed by signal ${runResult.signal}\n${actualOutput}`;
-    } else if (runResult.code !== 0) {
-      statusStr = 'WrongAnswer'; 
-      // Distinguish compilation vs runtime if possible
-      if (response.data.compile && response.data.compile.code !== 0) {
-        statusStr = 'CompilationError';
-        actualOutput = response.data.compile.output || actualOutput;
-      } else {
-        statusStr = 'RuntimeError';
-      }
+    let finalCode = code;
+    // For Java, ensure class name is Main so Wandbox can execute it
+    if ((language || '').toLowerCase() === 'java') {
+      finalCode = code.replace(/public\s+class\s+\w+/, 'public class Main');
     }
 
-    const passed = statusStr === 'Accepted' && compareOutputs(actualOutput, expectedOutputStr);
-    if (!passed && statusStr === 'Accepted') statusStr = 'WrongAnswer';
+    const payload = {
+      compiler,
+      code: finalCode,
+      stdin: inputStr || '',
+    };
+    // Only add compiler option for C/C++
+    if (['cpp', 'c++', 'c'].includes((language || '').toLowerCase())) {
+      payload['compiler-option-raw'] = '-O2 -std=c++17';
+    }
+
+    const response = await axios.post(
+      'https://wandbox.org/api/compile.json',
+      payload,
+      { timeout: 15000, headers: { 'Content-Type': 'application/json' } }
+    );
+
+    const data = response.data;
+    const runtimeMs = Date.now() - startTime;
+
+    // Check for compilation error
+    if (data.compiler_error) {
+      return {
+        status: 'CompilationError',
+        passed: false,
+        actualOutput: `Compilation Error:\n${data.compiler_error}`,
+        runtimeMs,
+        memoryKb: 0,
+      };
+    }
+
+    const actualOutput = (data.program_output || '').trim();
+
+    // Runtime error: non-zero exit, no program output
+    if (data.status !== '0' && !actualOutput) {
+      return {
+        status: 'RuntimeError',
+        passed: false,
+        actualOutput: data.program_error || 'Runtime Error (non-zero exit)',
+        runtimeMs,
+        memoryKb: 0,
+      };
+    }
+
+    const passed = compareOutputs(actualOutput, expectedOutputStr);
 
     return {
-      status: statusStr,
+      status: passed ? 'Accepted' : 'WrongAnswer',
       passed,
       actualOutput: actualOutput || '(No output produced)',
       runtimeMs,
-      memoryKb,
+      memoryKb: 15000,
     };
   } catch (error) {
-    console.warn('[Piston API Error, switching to native compiler]:', error.message);
+    console.warn('[Wandbox Error, falling back to native]:', error.message);
     return await executeInNativeCompiler(code, language, inputStr, expectedOutputStr);
   }
 };
+
+// Kept for backward compatibility (Piston is now whitelist-only)
+const executeInPistonAPI = executeInWandbox;
 
 const executeCode = async ({ code, language, input = '', expectedOutput = '' }) => {
   const judge0Url = process.env.JUDGE0_API_URL;
   const judge0Key = process.env.JUDGE0_API_KEY;
 
   if (!judge0Url || !judge0Key) {
-    console.log('[Judge0 API] Credentials missing. Falling back to free Piston Cloud API...');
+    console.log('[Judge0 API] Credentials missing. Falling back to free Wandbox Cloud API...');
     return await executeInPistonAPI(code, language, input, expectedOutput);
   }
 
