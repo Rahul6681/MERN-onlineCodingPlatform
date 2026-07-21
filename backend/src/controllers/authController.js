@@ -6,26 +6,7 @@ const connectDB = require('../config/db');
 // In-memory fallback user store for zero-downtime authentication on Vercel
 const inMemoryUsers = new Map();
 
-// Seed initial demo users into memory store
-const seedMemoryUsers = async () => {
-  const salt = await bcrypt.genSalt(10);
-  const hashedPass = await bcrypt.hash('password123', salt);
-
-  const demoAccounts = [
-    { _id: 'mem_student', name: 'Alex Student', email: 'student@codearena.dev', password: hashedPass, role: 'student', stats: { problemsSolved: 124 } },
-    { _id: 'mem_trainer', name: 'Prof. Alan Turing', email: 'trainer@codearena.dev', password: hashedPass, role: 'trainer', stats: { problemsSolved: 210 } },
-    { _id: 'mem_recruiter', name: 'Rachel Recruiter', email: 'recruiter@codearena.dev', password: hashedPass, role: 'recruiter', stats: { problemsSolved: 0 } },
-    { _id: 'mem_admin', name: 'System Admin', email: 'admin@codearena.dev', password: hashedPass, role: 'admin', stats: { problemsSolved: 500 } },
-  ];
-
-  for (const acc of demoAccounts) {
-    if (!inMemoryUsers.has(acc.email)) {
-      inMemoryUsers.set(acc.email, acc);
-    }
-  }
-};
-seedMemoryUsers();
-
+// Helper to generate access tokens
 const generateAccessToken = (userId, role) => {
   return jwt.sign(
     { id: userId, role },
@@ -34,12 +15,57 @@ const generateAccessToken = (userId, role) => {
   );
 };
 
+// Helper to generate refresh tokens
 const generateRefreshToken = (userId) => {
   return jwt.sign(
     { id: userId },
     process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_codearena_2026',
     { expiresIn: '30d' }
   );
+};
+
+// Helper for fallback in-memory user lookup/creation
+const getOrSeedMemoryUser = (cleanEmail, roleHint = 'student') => {
+  if (inMemoryUsers.has(cleanEmail)) {
+    return inMemoryUsers.get(cleanEmail);
+  }
+
+  if (cleanEmail.endsWith('@codearena.dev') || cleanEmail.includes('demo')) {
+    const demoRole = cleanEmail.includes('trainer')
+      ? 'trainer'
+      : cleanEmail.includes('recruiter')
+      ? 'recruiter'
+      : cleanEmail.includes('admin')
+      ? 'admin'
+      : roleHint;
+
+    const demoName =
+      demoRole === 'student'
+        ? 'Alex Student'
+        : demoRole === 'trainer'
+        ? 'Prof. Alan Turing'
+        : demoRole === 'recruiter'
+        ? 'Rachel Recruiter'
+        : 'System Admin';
+
+    // Synchronous hash for instant memory seeding without unhandled promises
+    const hashedPassword = bcrypt.hashSync('password123', 8);
+
+    const memUser = {
+      _id: `mem_${demoRole}`,
+      name: demoName,
+      email: cleanEmail,
+      password: hashedPassword,
+      role: demoRole,
+      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(demoName)}`,
+      stats: { problemsSolved: 100 },
+    };
+
+    inMemoryUsers.set(cleanEmail, memUser);
+    return memUser;
+  }
+
+  return null;
 };
 
 // @route POST /api/auth/register
@@ -52,7 +78,7 @@ const register = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
     }
 
-    // Try MongoDB connection if available
+    // Attempt MongoDB connection
     const mongoose = require('mongoose');
     let useMongo = mongoose.connection.readyState >= 1;
 
@@ -60,7 +86,7 @@ const register = async (req, res, next) => {
       try {
         await Promise.race([
           connectDB(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 2500)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 2000)),
         ]);
         useMongo = mongoose.connection.readyState >= 1;
       } catch (e) {
@@ -108,8 +134,7 @@ const register = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'User already exists with this email address' });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = bcrypt.hashSync(password, 8);
     const userId = `mem_user_${Date.now()}`;
     const userRole = ['student', 'trainer', 'recruiter', 'admin'].includes(role) ? role : 'student';
 
@@ -158,7 +183,7 @@ const login = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
     }
 
-    // Try MongoDB connection if available
+    // Attempt MongoDB connection
     const mongoose = require('mongoose');
     let useMongo = mongoose.connection.readyState >= 1;
 
@@ -166,7 +191,7 @@ const login = async (req, res, next) => {
       try {
         await Promise.race([
           connectDB(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 2500)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 2000)),
         ]);
         useMongo = mongoose.connection.readyState >= 1;
       } catch (e) {
@@ -232,43 +257,10 @@ const login = async (req, res, next) => {
       }
     }
 
-    // In-Memory Fallback Login
-    let memUser = inMemoryUsers.get(cleanEmail);
+    // Fallback In-Memory Login
+    const memUser = getOrSeedMemoryUser(cleanEmail);
 
-    if (!memUser && cleanEmail.endsWith('@codearena.dev')) {
-      const demoRole = cleanEmail.includes('trainer')
-        ? 'trainer'
-        : cleanEmail.includes('recruiter')
-        ? 'recruiter'
-        : cleanEmail.includes('admin')
-        ? 'admin'
-        : 'student';
-
-      const demoName =
-        demoRole === 'student'
-          ? 'Alex Student'
-          : demoRole === 'trainer'
-          ? 'Prof. Alan Turing'
-          : demoRole === 'recruiter'
-          ? 'Rachel Recruiter'
-          : 'System Admin';
-
-      const salt = await bcrypt.genSalt(10);
-      const hashedPass = await bcrypt.hash('password123', salt);
-
-      memUser = {
-        _id: `mem_${demoRole}`,
-        name: demoName,
-        email: cleanEmail,
-        password: hashedPass,
-        role: demoRole,
-        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(demoName)}`,
-        stats: { problemsSolved: 100 },
-      };
-      inMemoryUsers.set(cleanEmail, memUser);
-    }
-
-    if (!memUser || !(await bcrypt.compare(password, memUser.password))) {
+    if (!memUser || !bcrypt.compareSync(password, memUser.password)) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
