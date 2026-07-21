@@ -407,4 +407,4 @@ const executeCode = async ({ code, language, input = '', expectedOutput = '' }) 
   }
 };
 
-module.exports = { executeCode, executeInNativeCompiler, executeInPistonAPI, compareOutputs };
+module.exports = { executeCode, executeInNativeCompiler, executeInPistonAPI, executeInWandbox, executeInFallbackVM: executeInNativeCompiler, compareOutputs };
