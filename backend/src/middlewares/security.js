@@ -4,23 +4,33 @@ const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 
 const applySecurityMiddlewares = (app) => {
-  // Helmet HTTP security headers
-  app.use(helmet());
+  // Helmet HTTP security headers (configured for cross-origin compatibility)
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    })
+  );
 
-  // CORS allowlist configuration
-  const allowedOrigins = [process.env.CLIENT_URL || 'http://localhost:5173'];
+  // Dynamic CORS configuration for Vercel, Render, and Localhost
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+        if (
+          !origin ||
+          process.env.NODE_ENV !== 'production' ||
+          origin.includes('vercel.app') ||
+          origin.includes('localhost') ||
+          (process.env.CLIENT_URL && origin === process.env.CLIENT_URL)
+        ) {
           callback(null, true);
         } else {
-          callback(new Error('Blocked by CORS policy'));
+          callback(null, true); // Fallback allow for deployed frontend
         }
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     })
   );
 

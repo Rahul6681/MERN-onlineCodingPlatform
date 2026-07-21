@@ -66,7 +66,7 @@ app.get('/health', (req, res) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   server.listen(PORT, () => {
     console.log(`🚀 CodeArena Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
   });
