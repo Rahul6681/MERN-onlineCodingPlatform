@@ -4,7 +4,8 @@
   "description": "CodeArena — Full MERN Online Coding Platform (LeetCode / HackerRank / CodeChef clone)",
   "private": true,
   "scripts": {
-    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "setup": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "install:all": "npm run setup",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
