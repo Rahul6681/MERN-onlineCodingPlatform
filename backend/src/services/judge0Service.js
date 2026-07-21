@@ -23,6 +23,65 @@ const normalizeOutput = (str) => {
   return String(str).trim().replace(/\r\n/g, '\n').replace(/\s+/g, ' ');
 };
 
+/**
+ * Preprocesses stdin input for compiled languages (C++, Java, C).
+ * 
+ * Our test cases store inputs in JSON format like:
+ *   "[0,1,0,2,1,0,1,3,2,1,2,1]"  (array)
+ *   '{"nums":[2,7,11,15],"target":9}'  (object)
+ *   '"hello"'  (string)
+ *   "5"  (plain number)
+ *
+ * Compiled languages (C++/Java/C) use cin/Scanner which need whitespace-delimited input.
+ * JavaScript and Python get the raw JSON string which they can parse themselves.
+ *
+ * For compiled languages, converts:
+ *   [1,2,3]  →  3\n1 2 3   (count on first line, elements space-separated)
+ *   5        →  5          (unchanged)
+ *   "hello"  →  hello      (strips JSON quotes)
+ */
+const preprocessStdinForLanguage = (inputStr, language) => {
+  const lang = (language || '').toLowerCase();
+  const isCompiled = ['cpp', 'c++', 'c', 'java'].includes(lang);
+
+  if (!isCompiled || !inputStr || !inputStr.trim()) return inputStr || '';
+
+  const raw = inputStr.trim();
+
+  try {
+    const parsed = JSON.parse(raw);
+
+    // Array input: "[0,1,2,3]" → "4\n0 1 2 3"
+    if (Array.isArray(parsed)) {
+      return `${parsed.length}\n${parsed.join(' ')}`;
+    }
+
+    // Object input like {"nums":[2,7,11],"target":9} → "3\n2 7 11\n9"
+    // Flatten object values: each value on its own line, arrays space-separated
+    if (typeof parsed === 'object' && parsed !== null) {
+      const parts = [];
+      for (const val of Object.values(parsed)) {
+        if (Array.isArray(val)) {
+          parts.push(`${val.length}`);
+          parts.push(val.join(' '));
+        } else {
+          parts.push(String(val));
+        }
+      }
+      return parts.join('\n');
+    }
+
+    // String: '"hello"' → 'hello'
+    if (typeof parsed === 'string') return parsed;
+
+    // Number/boolean: return as-is
+    return String(parsed);
+  } catch (e) {
+    // Not JSON — return raw (already plain text like "3\n1 2 3" or just "5")
+    return raw;
+  }
+};
+
 // Check if actual output matches expected output (supports JSON comparison)
 const compareOutputs = (actualStr, expectedStr) => {
   const normActual = normalizeOutput(actualStr);
@@ -293,10 +352,13 @@ const executeInWandbox = async (code, language, inputStr, expectedOutputStr) => 
       finalCode = code.replace(/public\s+class\s+\w+/, 'public class Main');
     }
 
+    // Convert JSON test-case inputs to cin/Scanner compatible format for compiled languages
+    const processedInput = preprocessStdinForLanguage(inputStr, language);
+
     const payload = {
       compiler,
       code: finalCode,
-      stdin: inputStr || '',
+      stdin: processedInput,
     };
     // For C/C++: pass options newline-separated as Wandbox requires
     // gcc-head already defaults to C++17, so only pass -O2
