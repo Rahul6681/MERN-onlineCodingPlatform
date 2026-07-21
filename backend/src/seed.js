@@ -1,5 +1,12 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const dns = require('dns');
+
+// Ensure reliable DNS resolution for mongodb+srv:// URIs
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {}
+
 dotenv.config();
 
 const User = require('./models/User');
@@ -12,7 +19,9 @@ const Leaderboard = require('./models/Leaderboard');
 const LearningPath = require('./models/LearningPath');
 const Assessment = require('./models/Assessment');
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/codearena';
+const rawUri = process.env.MONGO_URI || 'mongodb://localhost:27017/codearena';
+let MONGO_URI = rawUri ? String(rawUri).trim().replace(/^["']|["']$/g, '') : 'mongodb://localhost:27017/codearena';
+MONGO_URI = MONGO_URI.replace('.net//', '.net/');
 
 const seedData = async () => {
   try {
