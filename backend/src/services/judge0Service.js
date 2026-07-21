@@ -258,12 +258,85 @@ public class ${className} {
   }
 };
 
+// Free Public Cloud Code Execution Engine (Piston API)
+const executeInPistonAPI = async (code, language, inputStr, expectedOutputStr) => {
+  const startTime = Date.now();
+  const PISTON_LANG_MAP = {
+    javascript: 'javascript',
+    js: 'javascript',
+    python: 'python',
+    py: 'python',
+    cpp: 'c++',
+    'c++': 'c++',
+    java: 'java',
+    c: 'c',
+    go: 'go',
+    csharp: 'csharp',
+    php: 'php'
+  };
+
+  const pistonLang = PISTON_LANG_MAP[language.toLowerCase()];
+  
+  if (!pistonLang) {
+    return await executeInNativeCompiler(code, language, inputStr, expectedOutputStr);
+  }
+
+  try {
+    const response = await axios.post(
+      'https://emkc.org/api/v2/piston/execute',
+      {
+        language: pistonLang,
+        version: '*',
+        files: [{ content: code }],
+        stdin: inputStr || '',
+      },
+      { timeout: 8000 }
+    );
+
+    const runResult = response.data.run || {};
+    let actualOutput = (runResult.output || '').trim();
+    let runtimeMs = Date.now() - startTime;
+    let memoryKb = 15000;
+    
+    // Check for compilation or runtime errors from Piston
+    let statusStr = 'Accepted';
+    if (runResult.code !== 0 && runResult.signal) {
+      statusStr = 'RuntimeError';
+      actualOutput = `Runtime Error: Process killed by signal ${runResult.signal}\n${actualOutput}`;
+    } else if (runResult.code !== 0) {
+      statusStr = 'WrongAnswer'; 
+      // Distinguish compilation vs runtime if possible
+      if (response.data.compile && response.data.compile.code !== 0) {
+        statusStr = 'CompilationError';
+        actualOutput = response.data.compile.output || actualOutput;
+      } else {
+        statusStr = 'RuntimeError';
+      }
+    }
+
+    const passed = statusStr === 'Accepted' && compareOutputs(actualOutput, expectedOutputStr);
+    if (!passed && statusStr === 'Accepted') statusStr = 'WrongAnswer';
+
+    return {
+      status: statusStr,
+      passed,
+      actualOutput: actualOutput || '(No output produced)',
+      runtimeMs,
+      memoryKb,
+    };
+  } catch (error) {
+    console.warn('[Piston API Error, switching to native compiler]:', error.message);
+    return await executeInNativeCompiler(code, language, inputStr, expectedOutputStr);
+  }
+};
+
 const executeCode = async ({ code, language, input = '', expectedOutput = '' }) => {
   const judge0Url = process.env.JUDGE0_API_URL;
   const judge0Key = process.env.JUDGE0_API_KEY;
 
   if (!judge0Url || !judge0Key) {
-    return await executeInNativeCompiler(code, language, input, expectedOutput);
+    console.log('[Judge0 API] Credentials missing. Falling back to free Piston Cloud API...');
+    return await executeInPistonAPI(code, language, input, expectedOutput);
   }
 
   try {
@@ -305,9 +378,9 @@ const executeCode = async ({ code, language, input = '', expectedOutput = '' }) 
       memoryKb: result.memory || 0,
     };
   } catch (error) {
-    console.warn('[Judge0 API Error, switching to native compiler]:', error.message);
-    return await executeInNativeCompiler(code, language, input, expectedOutput);
+    console.warn('[Judge0 API Error, switching to Piston API]:', error.message);
+    return await executeInPistonAPI(code, language, input, expectedOutput);
   }
 };
 
-module.exports = { executeCode, executeInNativeCompiler, executeInFallbackVM: executeInNativeCompiler, compareOutputs };
+module.exports = { executeCode, executeInNativeCompiler, executeInPistonAPI, compareOutputs };
