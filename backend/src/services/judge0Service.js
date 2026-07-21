@@ -298,9 +298,10 @@ const executeInWandbox = async (code, language, inputStr, expectedOutputStr) => 
       code: finalCode,
       stdin: inputStr || '',
     };
-    // Only add compiler option for C/C++
+    // For C/C++: pass options newline-separated as Wandbox requires
+    // gcc-head already defaults to C++17, so only pass -O2
     if (['cpp', 'c++', 'c'].includes((language || '').toLowerCase())) {
-      payload['compiler-option-raw'] = '-O2 -std=c++17';
+      payload['compiler-option-raw'] = '-O2\n-std=c++17';
     }
 
     const response = await axios.post(
