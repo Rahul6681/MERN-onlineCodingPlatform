@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const connectDB = require('../config/db');
 
 const generateAccessToken = (userId, role) => {
   return jwt.sign(
@@ -27,13 +28,10 @@ const register = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
     }
 
-    // Check if MongoDB is connected
+    // Ensure MongoDB connection is ready
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState < 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database service unavailable. Please check MONGO_URI in Vercel environment settings.',
-      });
+      await connectDB();
     }
 
     const existingUser = await User.findOne({ email: cleanEmail });
@@ -91,13 +89,10 @@ const login = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
     }
 
-    // Check if MongoDB is connected
+    // Ensure MongoDB connection is ready
     const mongoose = require('mongoose');
     if (mongoose.connection.readyState < 1) {
-      return res.status(503).json({
-        success: false,
-        message: 'Database service unavailable. Please check MONGO_URI in Vercel environment settings.',
-      });
+      await connectDB();
     }
 
     let user = await User.findOne({ email: cleanEmail }).select('+password');
