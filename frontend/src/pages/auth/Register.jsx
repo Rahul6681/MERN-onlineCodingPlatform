@@ -36,7 +36,7 @@ export default function Register() {
     try {
       const res = await registerApi({ name: name.trim(), email: email.trim(), password, role }).unwrap();
       const userName = res.data.user.name || name;
-      
+
       dispatch(setCredentials({ user: res.data.user, token: res.data.token }));
 
       setToastMsg(`Registered & logged in as ${userName}`);
@@ -44,9 +44,9 @@ export default function Register() {
 
       setTimeout(() => {
         navigate(`/${res.data.user.role}`);
-      }, 1000);
+      }, 800);
     } catch (err) {
-      setErrorMsg(err?.data?.message || 'Registration failed.');
+      setErrorMsg(err?.data?.message || err?.message || 'Registration failed.');
     }
   };
 

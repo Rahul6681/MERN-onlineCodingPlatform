@@ -34,19 +34,17 @@ export default function Login() {
     try {
       const res = await loginApi({ email: emailToSubmit, password: passwordToSubmit }).unwrap();
       const userName = res.data.user.name || 'User';
-      
-      // Store credentials
+
       dispatch(setCredentials({ user: res.data.user, token: res.data.token }));
-      
-      // Trigger login pop-up message
+
       setToastMsg(`Logged in as ${userName}`);
       setOpenSnackbar(true);
 
       setTimeout(() => {
         navigate(`/${res.data.user.role}`);
-      }, 1000);
+      }, 800);
     } catch (err) {
-      setErrorMsg(err?.data?.message || 'Login failed. Please check credentials.');
+      setErrorMsg(err?.data?.message || err?.message || 'Login failed. Please check credentials.');
     }
   };
 
