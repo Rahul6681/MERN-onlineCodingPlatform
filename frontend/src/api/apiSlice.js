@@ -16,29 +16,47 @@ const baseQueryWithReauth = async (args, api, extraOptions) => {
   let result = await rawBaseQuery(args, api, extraOptions);
 
   if (result.error && result.error.status === 401) {
-    // Attempt auto-login / refresh with demo student credentials in dev mode
+    const state = api.getState();
+    const currentUser = state.auth.user;
+
+    // 1. Try refreshing token via cookie
     try {
       const refreshResult = await rawBaseQuery(
-        {
-          url: '/auth/login',
-          method: 'POST',
-          body: { email: 'student@codearena.dev', password: 'password123' },
-        },
+        { url: '/auth/refresh', method: 'POST' },
         api,
         extraOptions
       );
 
       if (refreshResult.data?.data?.token) {
-        const { user, token } = refreshResult.data.data;
-        api.dispatch(setCredentials({ user, token }));
-        // Retry the original failed request with the new token
-        result = await rawBaseQuery(args, api, extraOptions);
-      } else {
-        api.dispatch(logout());
+        const token = refreshResult.data.data.token;
+        api.dispatch(setCredentials({ user: currentUser, token }));
+        return await rawBaseQuery(args, api, extraOptions);
       }
-    } catch (e) {
-      api.dispatch(logout());
+    } catch (e) {}
+
+    // 2. Dev mode fallback: re-login as the active logged-in user
+    if (currentUser?.email) {
+      try {
+        const loginResult = await rawBaseQuery(
+          {
+            url: '/auth/login',
+            method: 'POST',
+            body: { email: currentUser.email, password: 'password123' },
+          },
+          api,
+          extraOptions
+        );
+
+        if (loginResult.data?.data?.token) {
+          const { user, token } = loginResult.data.data;
+          api.dispatch(setCredentials({ user, token }));
+          return await rawBaseQuery(args, api, extraOptions);
+        }
+      } catch (e) {}
     }
+
+    // 3. Log out if re-authentication is not possible
+    api.dispatch(logout());
   }
 
   return result;

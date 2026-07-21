@@ -23,7 +23,7 @@ import {
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { logout, setCredentials } from '../features/authSlice';
-import { useGetNotificationsQuery, useMarkNotificationReadMutation } from '../api/apiSlice';
+import { useGetNotificationsQuery, useMarkNotificationReadMutation, useLoginMutation } from '../api/apiSlice';
 
 export default function Navbar({ mode, toggleTheme }) {
   const { user, isAuthenticated } = useSelector((state) => state.auth);
@@ -33,6 +33,7 @@ export default function Navbar({ mode, toggleTheme }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifAnchor, setNotifAnchor] = useState(null);
 
+  const [loginApi] = useLoginMutation();
   const { data: notifData } = useGetNotificationsQuery(undefined, { skip: !isAuthenticated });
   const [markRead] = useMarkNotificationReadMutation();
 
@@ -41,11 +42,26 @@ export default function Navbar({ mode, toggleTheme }) {
     navigate('/login');
   };
 
-  const switchRoleDemo = (newRole) => {
-    if (user) {
-      dispatch(setCredentials({ user: { ...user, role: newRole }, token: localStorage.getItem('token') }));
+  const switchRoleDemo = async (newRole) => {
+    const emailMap = {
+      student: 'student@codearena.dev',
+      trainer: 'trainer@codearena.dev',
+      recruiter: 'recruiter@codearena.dev',
+      admin: 'admin@codearena.dev',
+    };
+
+    try {
+      const targetEmail = emailMap[newRole] || 'student@codearena.dev';
+      const res = await loginApi({ email: targetEmail, password: 'password123' }).unwrap();
+      dispatch(setCredentials({ user: res.data.user, token: res.data.token }));
       navigate(`/${newRole}`);
       setAnchorEl(null);
+    } catch (e) {
+      if (user) {
+        dispatch(setCredentials({ user: { ...user, role: newRole }, token: localStorage.getItem('token') }));
+        navigate(`/${newRole}`);
+        setAnchorEl(null);
+      }
     }
   };
 
