@@ -178,3 +178,8 @@ export default function Navbar({ mode, toggleTheme }) {
     </AppBar>
   );
 }
+
+
+
+
+//This project is a type of coding platform
